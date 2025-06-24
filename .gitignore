@@ -159,6 +159,7 @@ test.sh
 checkpoints/
 results/
 result_long_term_forecast.txt
+results.csv
 result_anomaly_detection.txt
 scripts/augmentation/
 run_anylearn.py

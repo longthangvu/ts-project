@@ -1,5 +1,5 @@
-is_training=0
-model=ForecastPFN
+is_training=1
+model=PatchTST
 data_path="../ForecastPFN/academic_data"
 # model_path="../ForecastPFN/src/synthetic_generation/data/synthetic/models/ForecastPFN"
 
@@ -7,9 +7,11 @@ data_path="../ForecastPFN/academic_data"
 for preLen in 6 8 14 18 24 36 48 60
 do
 
+# for is_training in 1 0; do
+
 # exchange
 python run.py \
- --task_name forecastpfn \
+ --task_name long_term_forecast \
  --is_training $is_training \
  --data exchange \
  --root_path $data_path/exchange_rate/ \
@@ -19,14 +21,22 @@ python run.py \
  --seq_len 36 \
  --label_len 18 \
  --pred_len $preLen \
- --itr 1 \
+ --e_layers 2 \
+ --d_layers 1 \
+ --factor 3 \
+ --enc_in 1 \
+ --dec_in 1 \
+ --c_out 1 \
+ --itr 5 \
+ --n_heads 4 \
+ --d_model 1024
 
 nvidia-smi
 
 
 # illness
 python run.py \
- --task_name forecastpfn \
+ --task_name long_term_forecast \
  --is_training $is_training \
  --data ili \
  --root_path $data_path/illness/ \
@@ -36,14 +46,22 @@ python run.py \
  --seq_len 36 \
  --label_len 18 \
  --pred_len $preLen \
- --itr 1 \
+ --e_layers 2 \
+ --d_layers 1 \
+ --factor 3 \
+ --enc_in 1 \
+ --dec_in 1 \
+ --c_out 1 \
+ --itr 5 \
+ --n_heads 4 \
+ --d_model 1024
 
 nvidia-smi
 
 
 # weather
 python run.py \
- --task_name forecastpfn \
+ --task_name long_term_forecast \
  --is_training $is_training \
  --data weather-mean \
  --root_path $data_path/weather/ \
@@ -53,14 +71,22 @@ python run.py \
  --seq_len 36 \
  --label_len 18 \
  --pred_len $preLen \
- --itr 1 \
+ --e_layers 2 \
+ --d_layers 1 \
+ --factor 3 \
+ --enc_in 1 \
+ --dec_in 1 \
+ --c_out 1 \
+ --itr 5 \
+ --n_heads 4 \
+ --d_model 1024
 
 nvidia-smi
 
 
 # traffic
 python run.py \
- --task_name forecastpfn \
+ --task_name long_term_forecast \
  --is_training $is_training \
  --data traffic-mean \
  --root_path $data_path/traffic/ \
@@ -70,14 +96,22 @@ python run.py \
  --seq_len 36 \
  --label_len 18 \
  --pred_len $preLen \
- --itr 1 \
+ --e_layers 2 \
+ --d_layers 1 \
+ --factor 3 \
+ --enc_in 1 \
+ --dec_in 1 \
+ --c_out 1 \
+ --itr 5 \
+ --n_heads 4 \
+ --d_model 1024
 
 nvidia-smi
 
 
 # electricity
 python run.py \
- --task_name forecastpfn \
+ --task_name long_term_forecast \
  --is_training $is_training \
  --data ECL-mean \
  --root_path $data_path/electricity/ \
@@ -87,14 +121,22 @@ python run.py \
  --seq_len 36 \
  --label_len 18 \
  --pred_len $preLen \
- --itr 1 \
+ --e_layers 2 \
+ --d_layers 1 \
+ --factor 3 \
+ --enc_in 1 \
+ --dec_in 1 \
+ --c_out 1 \
+ --itr 5 \
+ --n_heads 4 \
+ --d_model 1024
 
 nvidia-smi
 
 
 # ETTh1
 python run.py \
- --task_name forecastpfn \
+ --task_name long_term_forecast \
  --is_training $is_training \
  --data ETTh1-mean \
  --root_path $data_path/ETT-small/ \
@@ -104,14 +146,22 @@ python run.py \
  --seq_len 36 \
  --label_len 18 \
  --pred_len $preLen \
- --itr 1 \
+ --e_layers 2 \
+ --d_layers 1 \
+ --factor 3 \
+ --enc_in 1 \
+ --dec_in 1 \
+ --c_out 1 \
+ --itr 5 \
+ --n_heads 4 \
+ --d_model 1024
 
 nvidia-smi
 
 
 # ETTh2
 python run.py \
- --task_name forecastpfn \
+ --task_name long_term_forecast \
  --is_training $is_training \
  --data ETTh2-mean \
  --root_path $data_path/ETT-small/ \
@@ -121,10 +171,28 @@ python run.py \
  --seq_len 36 \
  --label_len 18 \
  --pred_len $preLen \
- --itr 1 \
+ --e_layers 2 \
+ --d_layers 1 \
+ --factor 3 \
+ --enc_in 1 \
+ --dec_in 1 \
+ --c_out 1 \
+ --itr 5 \
+ --n_heads 4 \
+ --d_model 1024
 
 nvidia-smi
 
-done;
 
 
+# done;
+
+for i in 0 1 2 3
+do
+  dirs=$(find checkpoints -type d -name "*_test_${i}")
+  if [ -n "$dirs" ]; then
+    echo "Deleting: $dirs"
+    rm -rf $dirs
+  fi
+done
+done

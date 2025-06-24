@@ -1,5 +1,5 @@
 #!/bin/bash
-model_name=PAttn
+model_name=Nonstationary_Transformer
 dataset='../Time-Series-Library/dataset/m4'
 PATTERNS=("Monthly" "Yearly" "Quarterly" "Weekly" "Daily" "Hourly")
 # PATTERNS=("Yearly")

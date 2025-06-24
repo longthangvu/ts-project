@@ -4,8 +4,7 @@ import torch
     # Informer, LightTS, Reformer, ETSformer, Pyraformer, PatchTST, MICN, Crossformer, FiLM, iTransformer, \
     # Koopa, TiDE, FreTS, TimeMixer, TSMixer, SegRNN, MambaSimple, TemporalFusionTransformer, SCINet, PAttn, TimeXer, \
     # WPMixer, MultiPatchFormer
-from models import TimesNet, Nonstationary_Transformer, FEDformer, PatchTST, iTransformer, PAttn 
-    # TimeMixer, TimeXer, DLinear
+from models import TimesNet, Nonstationary_Transformer, FEDformer, PatchTST, iTransformer, PAttn, TSMixer, TimeMixer
 
 class Exp_Basic(object):
     def __init__(self, args):
@@ -17,7 +16,8 @@ class Exp_Basic(object):
             'PatchTST': PatchTST,
             'iTransformer': iTransformer,
             'PAttn': PAttn,
-            # 'TimeMixer': TimeMixer,
+            'TSMixer': TSMixer,
+            'TimeMixer': TimeMixer,
             # 'TimeXer': TimeXer
             # 'DLinear': DLinear,
             # 'Autoformer': Autoformer,
@@ -48,7 +48,9 @@ class Exp_Basic(object):
             self.model_dict['Mamba'] = Mamba
 
         self.device = self._acquire_device()
-        self.model = self._build_model().to(self.device)
+        self.model = self._build_model()
+        if self.__class__.__name__ != 'Exp_Tradition_Longterm':
+            self.model.to(self.device)
 
     def _build_model(self):
         raise NotImplementedError
