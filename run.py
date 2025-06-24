@@ -4,6 +4,8 @@ import torch
 import torch.backends
 from exp.exp_long_term_forecasting import Exp_Long_Term_Forecast
 from exp.exp_short_term_forecasting import Exp_Short_Term_Forecast
+from exp.exp_tradition_longterm import Exp_Tradition_Longterm
+from exp.exp_forecastpfn import Exp_ForecastPFN
 
 from utils.print_args import print_args
 import random
@@ -27,7 +29,7 @@ if __name__ == '__main__':
     parser.add_argument('--data', type=str, required=True, default='ETTh1', help='dataset type')
     parser.add_argument('--root_path', type=str, default='../Time-Series-Library/dataset/', help='root path of the data file')
     parser.add_argument('--data_path', type=str, default='ETTh1.csv', help='data file')
-    parser.add_argument('--features', type=str, default='M',
+    parser.add_argument('--features', type=str, default='S',
                         help='forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate')
     parser.add_argument('--target', type=str, default='OT', help='target feature in S or MS task')
     parser.add_argument('--freq', type=str, default='h',
@@ -67,6 +69,22 @@ if __name__ == '__main__':
     parser.add_argument('--p_hidden_dims', type=int, nargs='+', default=[128, 128],
                         help='hidden layer dimensions of projector (List)')
     parser.add_argument('--p_hidden_layers', type=int, default=2, help='number of hidden layers in projector')
+    # TimeMixer params
+    parser.add_argument('--down_sampling_layers', type=int, default=0, help='num of down sampling layers')
+    parser.add_argument('--down_sampling_window', type=int, default=1, help='down sampling window size')
+    parser.add_argument('--down_sampling_method', type=str, default=None,
+                        help='down sampling method, only support avg, max, conv')
+    parser.add_argument('--channel_independence', type=int, default=1,
+                        help='0: channel dependence 1: channel independence for FreTS model')
+    parser.add_argument('--decomp_method', type=str, default='moving_avg',
+                        help='method of series decompsition, only support moving_avg or dft_decomp')
+    parser.add_argument('--use_norm', type=int, default=1, help='whether to use normalize; True 1 False 0')
+    # metrics (dtw)
+    parser.add_argument('--use_dtw', type=bool, default=False,
+                        help='the controller of using dtw metric (dtw is time consuming, not suggested unless necessary)')
+ 
+    # augmentation
+    parser.add_argument('--augmentation_ratio', type=int, default=0, help="How many times to augment")
     
     # optimization
     parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')
@@ -112,6 +130,10 @@ if __name__ == '__main__':
         Exp = Exp_Long_Term_Forecast
     elif args.task_name == 'short_term_forecast':
         Exp = Exp_Short_Term_Forecast
+    elif args.task_name == 'tradition_long_term_forecast':
+        Exp = Exp_Tradition_Longterm
+    elif args.task_name == 'forecastpfn':
+        Exp = Exp_ForecastPFN
 
     if args.is_training:
         for ii in range(args.itr):
