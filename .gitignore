@@ -132,7 +132,7 @@ cython_debug/
 /tv_result.xlsx
 /test.py
 **/m4_results/
-**/test_results/
+**/test_results*/
 /PatchTST_results.xlsx
 /seq_len_long_term_forecast/
 /progress.xlsx
@@ -165,3 +165,6 @@ scripts/augmentation/
 run_anylearn.py
 environment.txt
 /logs
+**/archives
+**/ckpts
+**results**

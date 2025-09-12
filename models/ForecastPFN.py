@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
 import math
-
+from einops import rearrange
+from layers.Transformer_EncDec import Encoder, EncoderLayer
+from layers.SelfAttention_Family import FullAttention, AttentionLayer
 NUM_TASKS = 10
 YEAR = 0
 MONTH = 1
@@ -139,6 +141,350 @@ class TransformerBlock(nn.Module):
         x = self.activation(self.ff1(x))
         x = self.activation(self.ff2(x))
         return x
+
+class PAttnBlock(nn.Module):
+    """
+    Patch‐based attention from https://arxiv.org/abs/2406.16964
+    Inputs:
+      - x: [B, seq_len, d_model]
+    Outputs:
+      - [B, pred_len, d_model]
+    """
+    def __init__(
+        self,
+        d_model:int,
+        seq_len:int=100+1,
+        pred_len:int=1,
+        n_heads:int=4,
+        factor:float=5,
+        dropout:float=0.1,
+        activation:str='gelu',
+        patch_size:int=16,
+        stride:int=8
+    ):
+        super().__init__()
+        self.d_ff       = 4 * n_heads * d_model
+        self.seq_len    = seq_len
+        self.pred_len   = pred_len
+        self.d_model    = d_model
+        self.patch_size = patch_size
+        self.stride     = stride
+        # number of overlapping patches you’ll get
+        self.patch_num  = (seq_len - patch_size) // stride + 2
+
+        self.pad   = nn.ReplicationPad1d((0, stride))
+        self.inp   = nn.Linear(patch_size, d_model)
+        self.enc   = Encoder(
+            [EncoderLayer(
+                AttentionLayer(
+                    FullAttention(False, factor, attention_dropout=dropout, output_attention=False),
+                    d_model, n_heads
+                ),
+                d_model, self.d_ff, dropout=dropout, activation=activation
+            )],
+            norm_layer=nn.LayerNorm(d_model)
+        )
+        self.outp  = nn.Linear(d_model * self.patch_num, pred_len)
+
+    def forward(self, x):
+        # x: [B, seq_len, d_model]
+        B, T, D = x.shape
+
+        # 1) normalize in‐place
+        m = x.mean(1, keepdim=True).detach()
+        x = x - m
+        s = torch.sqrt(x.var(1, keepdim=True, unbiased=False) + 1e-5)
+        x = x / s
+
+        # 2) patch‐unfold
+        x = x.permute(0, 2, 1)                     # → [B, D, T]
+        x = self.pad(x)                            # → [B, D, T+stride]
+        x = x.unfold(-1, self.patch_size, self.stride)   # → [B, D, patch_num, patch_size]
+        x = rearrange(x, 'b d m p -> b m d p')     # → [B, patch_num, D, patch_size]
+        x = self.inp(x)                            # → [B, patch_num, D, d_model]
+        x = rearrange(x, 'b m d d_model -> (b d) m d_model')
+
+        # 3) attend + ff
+        x, _ = self.enc(x)                         # → [(B·D), patch_num, d_model]
+        x = rearrange(x, '(b d) m d_model -> b d (m d_model)', b=B, d=D)
+
+        # 4) project back to pred_len
+        x = self.outp(x).permute(0, 2, 1)                           # → [B, pred_len, D]
+        return x
+
+class ForecastPFN_PAttn(nn.Module):
+    def __init__(self,
+                 epsilon:float=1e-4,
+                 scaler:str='robust',
+                 patch_size:int=16,
+                 stride:int=8):
+        """
+        config: dict with keys
+          - seq_len, pred_len, n_heads, d_ff, factor, dropout, activation, d_model
+        """
+        super().__init__()
+        self.epsilon   = epsilon
+        # --- time‐feature embedders (unchanged) ---
+        self.pos_year  = PositionExpansion(10, 4)
+        self.pos_month = PositionExpansion(12, 4)
+        self.pos_day   = PositionExpansion(31, 6)
+        self.pos_dow   = PositionExpansion(7,  4)
+        self.scaler    = CustomScaling(scaler)
+
+        # --- history embedding size = 2×embed_size ---
+        embed_size = sum(e.channels for e in (
+            self.pos_year, self.pos_month, self.pos_day, self.pos_dow
+        ))
+        self.d_model = embed_size * 2
+
+        self.no_pos = nn.Sequential(nn.Linear(1, embed_size), nn.ReLU())
+        self.w_pos  = nn.Sequential(nn.Linear(1, embed_size), nn.ReLU())
+        self.task_m = nn.Embedding(NUM_TASKS, embed_size)
+
+        # --- two PAttn blocks, first “narrow,” then “wide” ---
+        self.p0 = PAttnBlock(d_model=self.d_model,patch_size=patch_size, stride=stride)
+
+        # final scalar head
+        self.head  = nn.Sequential(nn.Linear(self.d_model, 1), nn.ReLU())
+
+    def forward(self, X):
+        # 1) unpack & pos‐embed history
+        ts  = X["ts"]               # [B, T, 5]
+        yr  = ts[:,:,0]
+        dy  = (yr[:,-1:] - yr).clamp(0, self.pos_year.periods)
+        pos = torch.cat([
+            self.pos_year(dy),
+            self.pos_month(ts[:,:,1]),
+            self.pos_day(ts[:,:,2]),
+            self.pos_dow(ts[:,:,3]),
+        ], dim=-1)                  # → [B, T, embed_size]
+
+        # 2) scale & embed values
+        h = X["history"].unsqueeze(-1)           # [B, T,1]
+        scale, h = self.scaler(h, self.epsilon)   # [B,1,1], [B,T,1]
+        e0 = self.no_pos(h)                       # [B, T, embed_size]
+        e1 = self.w_pos(h) + pos                  # [B, T, embed_size]
+        hist = torch.cat([e0, e1], dim=-1)        # [B, T, d_model]
+
+        # 3) embed query
+        tt = X["target_ts"].view(-1,1,5)          # ensure [B,1,5]
+        yrq= (yr[:,-1:] - tt[:,:,0]).clamp(0, self.pos_year.periods)
+        qp = torch.cat([
+            self.pos_year(yrq),
+            self.pos_month(tt[:,:,1]),
+            self.pos_day(tt[:,:,2]),
+            self.pos_dow(tt[:,:,3])
+        ], dim=-1).squeeze(1)                     # [B, embed_size]
+
+        t  = self.task_m(X["task"])               # [B, embed_size]
+        tgt= torch.cat([t, t + qp], dim=-1)       # [B, d_model]
+
+        # 4) one‐stage PAttn
+        hist = torch.cat([hist, tgt.unsqueeze(1)], dim=1)  # [B, T+1, d_model]
+        out0 = self.p0(hist)                # [B, pred_len, d_model]
+
+        # 5) head + de‐scale
+        y   = self.head(out0).squeeze(-1) * scale[:,:,0]
+        y   = y.squeeze(1)
+        return {"result": y, "scale": scale}
+
+class ResBlock(nn.Module):
+    def __init__(self, d_model: int, seq_len: int = 100+1, dropout: float = 0.1):
+        super().__init__()
+        self.temporal = nn.Sequential(
+            nn.Linear(seq_len, d_model),
+            nn.ReLU(),
+            nn.Linear(d_model, seq_len),
+            nn.Dropout(dropout)
+        )
+        self.channel = nn.Sequential(
+            nn.Linear(d_model, d_model),
+            nn.ReLU(),
+            nn.Linear(d_model, d_model),
+            nn.Dropout(dropout)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: [B, L, D]
+        x = x + self.temporal(x.transpose(1,2)).transpose(1,2)
+        x = x + self.channel(x)
+        return x
+
+
+class ForecastPFN_TSMixer(nn.Module):
+    def __init__(
+        self,
+        epsilon: float = 1e-4,
+        scaler: str = 'robust',
+        patch_size: int = 16,      # kept only for signature-compatibility
+        stride:     int = 8        # ditto
+    ):
+        super().__init__()
+        # --- exactly the same signature as ForecastPFN_PAttn ---
+        self.epsilon = epsilon
+        self.scaler  = CustomScaling(scaler)
+
+        # time-feature embedders (unchanged)
+        self.pos_year  = PositionExpansion(10, 4)
+        self.pos_month = PositionExpansion(12, 4)
+        self.pos_day   = PositionExpansion(31, 6)
+        self.pos_dow   = PositionExpansion(7,  4)
+
+        # compute d_model the same way
+        embed_size   = sum(e.channels for e in (
+            self.pos_year, self.pos_month, self.pos_day, self.pos_dow
+        ))
+        self.d_model = embed_size * 2
+
+        # history value embedders
+        self.no_pos  = nn.Sequential(nn.Linear(1, embed_size), nn.ReLU())
+        self.w_pos   = nn.Sequential(nn.Linear(1, embed_size), nn.ReLU())
+        self.task_m  = nn.Embedding(NUM_TASKS, embed_size)
+
+        # two TSMixer blocks (seq_len defaults to 100+1 inside ResBlock)
+        self.ts_blocks = nn.ModuleList([
+            ResBlock(d_model=self.d_model) for _ in range(2)
+        ])
+
+        # project along time from length 101→1
+        self.proj_time = nn.Linear(100 + 1, 1)
+        # scalar head on each embedding
+        self.head      = nn.Sequential(nn.Linear(self.d_model, 1), nn.ReLU())
+
+
+    def forward(self, X: dict) -> dict:
+        # 1) time-pos + scaling
+        ts   = X['ts']                # [B, T, 5]
+        yr   = ts[:,:,0]
+        dy   = (yr[:,-1:] - yr).clamp(0, self.pos_year.periods)
+        pos  = torch.cat([
+            self.pos_year(dy),
+            self.pos_month(ts[:,:,1]),
+            self.pos_day(  ts[:,:,2]),
+            self.pos_dow(  ts[:,:,3])
+        ], dim=-1)                   # [B, T, embed_size]
+
+        h     = X['history'].unsqueeze(-1)         # [B, T, 1]
+        scale, h = self.scaler(h, self.epsilon)    # [B,1,1], [B,T,1]
+        e0    = self.no_pos(h)                     # [B, T, embed_size]
+        e1    = self.w_pos(h) + pos                # [B, T, embed_size]
+        hist  = torch.cat([e0, e1], dim=-1)        # [B, T, d_model]
+
+        # 2) build tgt exactly as in PAttn
+        tt   = X['target_ts'].view(-1,1,5)         # [B,1,5]
+        yrq  = (yr[:,-1:] - tt[:,:,0]).clamp(0, self.pos_year.periods)
+        qp   = torch.cat([
+                    self.pos_year(yrq),
+                    self.pos_month(tt[:,:,1]),
+                    self.pos_day(  tt[:,:,2]),
+                    self.pos_dow(  tt[:,:,3])
+               ], dim=-1).squeeze(1)               # [B, embed_size]
+        t    = self.task_m(X['task'])             # [B, embed_size]
+        tgt  = torch.cat([t, t + qp], dim=-1)     # [B, d_model]
+
+        # prepend it → [B, T+1, d_model]
+        hist = torch.cat([hist, tgt.unsqueeze(1)], dim=1)
+
+        # 3) mix via TSMixer
+        x = hist
+        for block in self.ts_blocks:
+            x = block(x)                          # [B, T+1, d_model]
+
+        # 4) project along time → [B, pred_len=1, d_model]
+        x = x.permute(0,2,1)                      # → [B, d_model, T+1]
+        x = self.proj_time(x)                     # → [B, d_model, 1]
+        x = x.permute(0,2,1)                      # → [B, 1, d_model]
+
+        # 5) head + de-scale → keep the same output logic
+        y = self.head(x).squeeze(-1)              # → [B, 1]
+        y = y * scale[:,:,0]                      # de-scale
+        y = y + X['history'].mean(1, keepdim=True)  # add back mean
+
+        # exactly the same final squeeze for pred_len=1
+        y = y.squeeze(1)                          # → [B]
+
+        return {'result': y, 'scale': scale}
+
+class ForecastPFN_Linear(nn.Module):
+    def __init__(
+        self,
+        epsilon: float = 1e-4,
+        scaler: str = 'robust',
+        patch_size: int = 16,   # kept for signature compatibility
+        stride:     int = 8     # kept for signature compatibility
+    ):
+        super().__init__()
+        self.epsilon = epsilon
+        self.scaler  = CustomScaling(scaler)
+
+        # time‐feature embedders (unchanged)
+        self.pos_year  = PositionExpansion(10, 4)
+        self.pos_month = PositionExpansion(12, 4)
+        self.pos_day   = PositionExpansion(31, 6)
+        self.pos_dow   = PositionExpansion(7,  4)
+
+        # compute d_model
+        embed_size   = sum(e.channels for e in (
+            self.pos_year, self.pos_month, self.pos_day, self.pos_dow
+        ))
+        self.d_model = embed_size * 2
+
+        # history‐value embedders
+        self.no_pos = nn.Sequential(nn.Linear(1, embed_size), nn.ReLU())
+        self.w_pos  = nn.Sequential(nn.Linear(1, embed_size), nn.ReLU())
+        self.task_m = nn.Embedding(NUM_TASKS, embed_size)
+
+        # simple linear mixer along time: length=100+1 → 1
+        self.mix = nn.Linear(100 + 1, 1)
+
+        # scalar head on each embedding
+        self.head = nn.Sequential(nn.Linear(self.d_model, 1), nn.ReLU())
+
+    def forward(self, X: dict) -> dict:
+        # 1) time‐pos + scaling
+        ts  = X["ts"]               # [B, T=100, 5]
+        yr  = ts[:,:,0]
+        dy  = (yr[:,-1:] - yr).clamp(0, self.pos_year.periods)
+        pos = torch.cat([
+            self.pos_year(dy),
+            self.pos_month(ts[:,:,1]),
+            self.pos_day(  ts[:,:,2]),
+            self.pos_dow(  ts[:,:,3])
+        ], dim=-1)                  # [B, 100, embed_size]
+
+        h      = X["history"].unsqueeze(-1)    # [B, 100, 1]
+        scale, h = self.scaler(h, self.epsilon)# scale:[B,1,1], h:[B,100,1]
+        e0     = self.no_pos(h)                # [B, 100, embed_size]
+        e1     = self.w_pos(h) + pos           # [B, 100, embed_size]
+        hist   = torch.cat([e0, e1], dim=-1)   # [B, 100, d_model]
+
+        # 2) build tgt embedding
+        tt   = X["target_ts"].view(-1,1,5)     # [B,1,5]
+        yrq  = (yr[:,-1:] - tt[:,:,0]).clamp(0, self.pos_year.periods)
+        qp   = torch.cat([
+                    self.pos_year(yrq),
+                    self.pos_month(tt[:,:,1]),
+                    self.pos_day(  tt[:,:,2]),
+                    self.pos_dow(  tt[:,:,3])
+               ], dim=-1).squeeze(1)           # [B, embed_size]
+        t    = self.task_m(X["task"])          # [B, embed_size]
+        tgt  = torch.cat([t, t + qp], dim=-1)  # [B, d_model]
+
+        # prepend tgt → [B, 101, d_model]
+        hist = torch.cat([hist, tgt.unsqueeze(1)], dim=1)
+
+        # 3) simple linear mix along time
+        x = hist.permute(0,2,1)    # [B, d_model, 101]
+        x = self.mix(x)            # [B, d_model, 1]
+        x = x.permute(0,2,1)       # [B, 1, d_model]
+
+        # 4) head + de‐scale + add back mean
+        y = self.head(x).squeeze(-1)               # [B, 1]
+        y = y * scale[:,:,0]                       # de‐scale
+        y = y + X["history"].mean(1, keepdim=True) # add mean
+        y = y.squeeze(1)                           # → [B]
+
+        return {"result": y, "scale": scale}
 
 class ForecastPFN(nn.Module):
     def __init__(self, epsilon=1e-4, scaler='robust'):

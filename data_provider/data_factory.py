@@ -24,14 +24,14 @@ def data_provider(args, flag):
     Data = data_dict[args.data]
     timeenc = 0 if args.embed != 'timeF' else 1
 
-    shuffle_flag = False if (flag == 'test' or flag == 'TEST') else True
+    # shuffle_flag = False if (flag == 'test' or flag == 'TEST') else True
+    shuffle_flag = False
     drop_last = False
     batch_size = args.batch_size
     freq = args.freq
     if args.data == 'm4':
         drop_last = False
     data_set = Data(
-        args = args,
         root_path=args.root_path,
         data_path=args.data_path,
         flag=flag,
@@ -40,7 +40,9 @@ def data_provider(args, flag):
         target=args.target,
         timeenc=timeenc,
         freq=freq,
-        seasonal_patterns=args.seasonal_patterns
+        seasonal_patterns=args.seasonal_patterns,
+        train_budget=args.train_budget,
+        train_stride=args.train_stride
     )
     print(flag, len(data_set))
     data_loader = DataLoader(

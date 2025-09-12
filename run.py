@@ -6,6 +6,7 @@ from exp.exp_long_term_forecasting import Exp_Long_Term_Forecast
 from exp.exp_short_term_forecasting import Exp_Short_Term_Forecast
 from exp.exp_tradition_longterm import Exp_Tradition_Longterm
 from exp.exp_forecastpfn import Exp_ForecastPFN
+from exp.exp_meta_learning_pfn import Exp_MetaLearningPFN
 
 from utils.print_args import print_args
 import random
@@ -35,6 +36,9 @@ if __name__ == '__main__':
     parser.add_argument('--freq', type=str, default='h',
                         help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
     parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
+    parser.add_argument('--train_budget', type=float, default=1.0, help='length of training sequence')
+    parser.add_argument('--train_stride', type=int, default=16)
+    parser.add_argument('--use_time', type=bool, default=True)
     
     # forecasting task
     parser.add_argument('--seq_len', type=int, default=96, help='input sequence length')
@@ -134,6 +138,8 @@ if __name__ == '__main__':
         Exp = Exp_Tradition_Longterm
     elif args.task_name == 'forecastpfn':
         Exp = Exp_ForecastPFN
+    elif args.task_name == 'meta_learning_pfn':
+        Exp = Exp_MetaLearningPFN
 
     if args.is_training:
         for ii in range(args.itr):

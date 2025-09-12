@@ -4,7 +4,7 @@ import pandas as pd
 import glob
 import re
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from sklearn.preprocessing import StandardScaler
 from utils.timefeatures import time_features
 from data_provider.m4 import M4Dataset, M4Meta
@@ -15,10 +15,11 @@ warnings.filterwarnings('ignore')
 
 
 class Dataset_ETT_hour(Dataset):
-    def __init__(self, root_path, flag='train', size=None,
+    def __init__(self, args, root_path, flag='train', size=None,
                  features='S', data_path='ETTh1.csv',
-                 target='OT', scale=True, timeenc=0, freq='h', seasonal_patterns=None, train_budget=None, train_stride=1):
+                 target='OT', scale=True, timeenc=0, freq='h', seasonal_patterns=None):
         # size [seq_len, label_len, pred_len]
+        self.args = args
         # info
         if size == None:
             self.seq_len = 24 * 4 * 4
@@ -39,9 +40,6 @@ class Dataset_ETT_hour(Dataset):
         self.timeenc = timeenc
         self.freq = freq
 
-        self.train_budget = train_budget
-        self.stride = train_stride if self.set_type == 0 else 1
-
         self.root_path = root_path
         self.data_path = data_path
         self.__read_data__()
@@ -53,18 +51,6 @@ class Dataset_ETT_hour(Dataset):
 
         border1s = [0, 12 * 30 * 24 - self.seq_len, 12 * 30 * 24 + 4 * 30 * 24 - self.seq_len]
         border2s = [12 * 30 * 24, 12 * 30 * 24 + 4 * 30 * 24, 12 * 30 * 24 + 8 * 30 * 24]
-        
-        # Apply train_budget if specified
-        train_budget = self.train_budget
-        if train_budget and 0 < train_budget <= 1 and self.set_type == 0:  # Only for training
-            # Calculate available training data points (excluding seq_len for valid sampling)
-            num_train = border2s[0]  # 12 * 30 * 24
-            available_train_data = num_train - self.seq_len
-            # Use percentage of available training data
-            budget_datapoints = int(available_train_data * train_budget)
-            train_start = max(border1s[0], num_train - self.seq_len - budget_datapoints)
-            border1s[0] = train_start
-        
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
@@ -96,14 +82,13 @@ class Dataset_ETT_hour(Dataset):
         self.data_x = data[border1:border2]
         self.data_y = data[border1:border2]
 
-        # if self.set_type == 0 and self.args.augmentation_ratio > 0:
-        #     self.data_x, self.data_y, augmentation_tags = run_augmentation_single(self.data_x, self.data_y, self.args)
+        if self.set_type == 0 and self.args.augmentation_ratio > 0:
+            self.data_x, self.data_y, augmentation_tags = run_augmentation_single(self.data_x, self.data_y, self.args)
 
         self.data_stamp = data_stamp
 
     def __getitem__(self, index):
-        # s_begin = index
-        s_begin = index * self.stride if self.set_type == 0 else index
+        s_begin = index
         s_end = s_begin + self.seq_len
         r_begin = s_end - self.label_len
         r_end = r_begin + self.label_len + self.pred_len
@@ -115,23 +100,19 @@ class Dataset_ETT_hour(Dataset):
 
         return seq_x, seq_y, seq_x_mark, seq_y_mark
 
-    # def __len__(self):
-    #     return len(self.data_x) - self.seq_len - self.pred_len + 1
     def __len__(self):
-        n = len(self.data_x) - self.seq_len - self.pred_len + 1
-        if n <= 0:
-            return 0
-        return ((n - 1) // self.stride + 1) if self.set_type == 0 else n
+        return len(self.data_x) - self.seq_len - self.pred_len + 1
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
 
 
 class Dataset_ETT_minute(Dataset):
-    def __init__(self, root_path, flag='train', size=None,
+    def __init__(self, args, root_path, flag='train', size=None,
                  features='S', data_path='ETTm1.csv',
-                 target='OT', scale=True, timeenc=0, freq='t', seasonal_patterns=None, train_budget=None, train_stride=1):
+                 target='OT', scale=True, timeenc=0, freq='t', seasonal_patterns=None):
         # size [seq_len, label_len, pred_len]
+        self.args = args
         # info
         if size == None:
             self.seq_len = 24 * 4 * 4
@@ -151,9 +132,6 @@ class Dataset_ETT_minute(Dataset):
         self.scale = scale
         self.timeenc = timeenc
         self.freq = freq
-        
-        self.train_budget = train_budget
-        self.stride = train_stride if self.set_type == 0 else 1
 
         self.root_path = root_path
         self.data_path = data_path
@@ -166,18 +144,6 @@ class Dataset_ETT_minute(Dataset):
 
         border1s = [0, 12 * 30 * 24 * 4 - self.seq_len, 12 * 30 * 24 * 4 + 4 * 30 * 24 * 4 - self.seq_len]
         border2s = [12 * 30 * 24 * 4, 12 * 30 * 24 * 4 + 4 * 30 * 24 * 4, 12 * 30 * 24 * 4 + 8 * 30 * 24 * 4]
-        
-        # Apply train_budget if specified
-        train_budget = self.train_budget
-        if train_budget and 0 < train_budget <= 1 and self.set_type == 0:  # Only for training
-            # Calculate available training data points (excluding seq_len for valid sampling)
-            num_train = border2s[0]  # 12 * 30 * 24 * 4
-            available_train_data = num_train - self.seq_len
-            # Use percentage of available training data
-            budget_datapoints = int(available_train_data * train_budget)
-            train_start = max(border1s[0], num_train - self.seq_len - budget_datapoints)
-            border1s[0] = train_start
-        
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
@@ -211,14 +177,13 @@ class Dataset_ETT_minute(Dataset):
         self.data_x = data[border1:border2]
         self.data_y = data[border1:border2]
 
-        # if self.set_type == 0 and self.args.augmentation_ratio > 0:
-        #     self.data_x, self.data_y, augmentation_tags = run_augmentation_single(self.data_x, self.data_y, self.args)
+        if self.set_type == 0 and self.args.augmentation_ratio > 0:
+            self.data_x, self.data_y, augmentation_tags = run_augmentation_single(self.data_x, self.data_y, self.args)
 
         self.data_stamp = data_stamp
 
     def __getitem__(self, index):
-        # s_begin = index
-        s_begin = index * self.stride if self.set_type == 0 else index
+        s_begin = index
         s_end = s_begin + self.seq_len
         r_begin = s_end - self.label_len
         r_end = r_begin + self.label_len + self.pred_len
@@ -230,13 +195,8 @@ class Dataset_ETT_minute(Dataset):
 
         return seq_x, seq_y, seq_x_mark, seq_y_mark
 
-    # def __len__(self):
-    #     return len(self.data_x) - self.seq_len - self.pred_len + 1
     def __len__(self):
-        n = len(self.data_x) - self.seq_len - self.pred_len + 1
-        if n <= 0:
-            return 0
-        return ((n - 1) // self.stride + 1) if self.set_type == 0 else n
+        return len(self.data_x) - self.seq_len - self.pred_len + 1
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
@@ -245,8 +205,12 @@ class Dataset_ETT_minute(Dataset):
 class Dataset_Custom(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTh1.csv',
-                 target='OT', scale=True, timeenc=0, freq='h', seasonal_patterns=None, train_budget=None, train_stride=1):
+                 target='OT', scale=True, timeenc=0, freq='h',
+                 train_budget=0,
+                 seasonal_patterns=None, augmentation_ratio = 0):
         # size [seq_len, label_len, pred_len]
+        # self.args = args
+        self.augmentation_ratio = augmentation_ratio
         # info
         if size == None:
             self.seq_len = 24 * 4 * 4
@@ -266,9 +230,7 @@ class Dataset_Custom(Dataset):
         self.scale = scale
         self.timeenc = timeenc
         self.freq = freq
-        
         self.train_budget = train_budget
-        self.stride = train_stride if self.set_type == 0 else 1
 
         self.root_path = root_path
         self.data_path = data_path
@@ -289,19 +251,17 @@ class Dataset_Custom(Dataset):
         num_train = int(len(df_raw) * 0.7)
         num_test = int(len(df_raw) * 0.2)
         num_vali = len(df_raw) - num_train - num_test
-        border1s = [0, num_train - self.seq_len, len(df_raw) - num_test - self.seq_len]
-        border2s = [num_train, num_train + num_vali, len(df_raw)]
-        
-        # Apply train_budget if specified
-        train_budget = self.train_budget
-        if train_budget and 0 < train_budget <= 1 and self.set_type == 0:  # Only for training
+
+        train_start = 0
+        if self.train_budget and 0 < self.train_budget <= 1:
             # Calculate available training data points (excluding seq_len for valid sampling)
             available_train_data = num_train - self.seq_len
             # Use percentage of available training data
-            budget_datapoints = int(available_train_data * train_budget)
-            train_start = max(border1s[0], num_train - self.seq_len - budget_datapoints)
-            border1s[0] = train_start
-        
+            budget_datapoints = int(available_train_data * self.train_budget)
+            train_start = max(train_start, num_train - self.seq_len - budget_datapoints)
+
+        border1s = [train_start, num_train - self.seq_len, len(df_raw) - num_test - self.seq_len]
+        border2s = [num_train, num_train + num_vali, len(df_raw)]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
@@ -320,6 +280,7 @@ class Dataset_Custom(Dataset):
 
         df_stamp = df_raw[['date']][border1:border2]
         df_stamp['date'] = pd.to_datetime(df_stamp.date)
+        self.data_stamp_original = df_raw[border1:border2]
         if self.timeenc == 0:
             df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
             df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
@@ -333,14 +294,13 @@ class Dataset_Custom(Dataset):
         self.data_x = data[border1:border2]
         self.data_y = data[border1:border2]
 
-        # if self.set_type == 0 and self.args.augmentation_ratio > 0:
-        #     self.data_x, self.data_y, augmentation_tags = run_augmentation_single(self.data_x, self.data_y, self.args)
+        if self.set_type == 0 and self.augmentation_ratio > 0:
+            self.data_x, self.data_y, augmentation_tags = run_augmentation_single(self.data_x, self.data_y, self.args)
 
         self.data_stamp = data_stamp
 
     def __getitem__(self, index):
-        # s_begin = index
-        s_begin = index * self.stride if self.set_type == 0 else index
+        s_begin = index
         s_end = s_begin + self.seq_len
         r_begin = s_end - self.label_len
         r_end = r_begin + self.label_len + self.pred_len
@@ -352,20 +312,15 @@ class Dataset_Custom(Dataset):
 
         return seq_x, seq_y, seq_x_mark, seq_y_mark
 
-    # def __len__(self):
-    #     return len(self.data_x) - self.seq_len - self.pred_len + 1
     def __len__(self):
-        n = len(self.data_x) - self.seq_len - self.pred_len + 1
-        if n <= 0:
-            return 0
-        return ((n - 1) // self.stride + 1) if self.set_type == 0 else n
+        return len(self.data_x) - self.seq_len - self.pred_len + 1
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
 
 
 class Dataset_M4(Dataset):
-    def __init__(self, args, root_path, flag='pred', size=None,
+    def __init__(self, root_path, flag='pred', size=None,
                  features='S', data_path='ETTh1.csv',
                  target='OT', scale=False, inverse=False, timeenc=0, freq='15min',
                  seasonal_patterns='Yearly'):
@@ -391,6 +346,7 @@ class Dataset_M4(Dataset):
 
     def __read_data__(self):
         # M4Dataset.initialize()
+        # print(self.root_path)
         if self.flag == 'train':
             dataset = M4Dataset.load(training=True, dataset_file=self.root_path)
         else:
@@ -416,7 +372,7 @@ class Dataset_M4(Dataset):
         insample[-len(insample_window):, 0] = insample_window
         insample_mask[-len(insample_window):, 0] = 1.0
         outsample_window = sampled_timeseries[
-                           max(0, cut_point - self.label_len):min(len(sampled_timeseries), cut_point + self.pred_len)]
+                           cut_point - self.label_len:min(len(sampled_timeseries), cut_point + self.pred_len)]
         outsample[:len(outsample_window), 0] = outsample_window
         outsample_mask[:len(outsample_window), 0] = 1.0
         return insample, outsample, insample_mask, outsample_mask

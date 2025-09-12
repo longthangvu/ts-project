@@ -72,7 +72,7 @@ def _convert(v):
             pass
     return v
 
-def parse_log(path, model=None):
+def parse_log(path, model=None, budget=0):
     rows = []
     current = {}  # holds args for the current itr
     with open(path, 'r', encoding='utf-8') as f:
@@ -88,11 +88,14 @@ def parse_log(path, model=None):
                     'label_len':   int(m.group('label_len')),
                     'pred_len':    int(m.group('pred_len')),
                     'itr':         int(m.group('itr')),
+                    'budget':      budget,
                 }
                 continue
 
-            if model: m2 = PLAIN_MET_RE2.search(line)
-            else: m2 = PLAIN_MET_RE.search(line)
+            if model: 
+                m2 = PLAIN_MET_RE2.search(line)
+            else: 
+                m2 = PLAIN_MET_RE.search(line)
             if m2 and current:
                 # build row from `current` + these five metrics
                 row = dict(current)
@@ -115,14 +118,15 @@ def main():
 
     all_rows = []
     for mdl in os.listdir(args.logs_dir):
-        logp = os.path.join(args.logs_dir, mdl, 'run.log')
-        if os.path.isfile(logp):
-            if mdl.startswith('ForecastPFN'):
-                print(mdl)
-                all_rows.extend(parse_log(logp, model=mdl))
-            else:
-                print(mdl)
-                all_rows.extend(parse_log(logp))
+        for budget in [0, 50, 500]:
+            logp = os.path.join(args.logs_dir, mdl, f'run_{budget}.log')
+            if os.path.isfile(logp):
+                if mdl.startswith('ForecastPFN'):
+                    print(mdl)
+                    all_rows.extend(parse_log(logp, model=mdl, budget=budget))
+                else:
+                    print(mdl)
+                    all_rows.extend(parse_log(logp, budget=budget))
 
     if not all_rows:
         print("❌ No data found under", args.logs_dir)
@@ -131,7 +135,7 @@ def main():
     # final column order
     headers = [
       'model','data','seq_len','label_len','pred_len','itr',
-      'mae','mse','rmse','mape','mspe'
+      'mae','mse','rmse','mape','mspe','budget'
     ]
 
     with open(args.output, 'w', newline='', encoding='utf-8') as out:

@@ -14,7 +14,7 @@ from utils.dtw_metric import accelerated_dtw
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
  
 
-from models.ForecastPFN import ForecastPFN
+from models.ForecastPFN import ForecastPFN, ForecastPFN_PAttn, ForecastPFN_TSMixer, ForecastPFN_Linear
 
 warnings.filterwarnings('ignore')
 
@@ -25,10 +25,21 @@ class Exp_ForecastPFN(Exp_Basic):
 
     def _build_model(self):
         print('loading model')
-        pretrained = ForecastPFN()
-        # pretrained.load_state_dict(torch.load('./checkpoints/forecastpfn_pytorch.pth'))
-        # pretrained.load_state_dict(torch.load('./synthetic-data/models/model.pt'))
-        pretrained.load_state_dict(torch.load('./synthetic-data/models/model2.pt'))
+        pretrained = None
+        if self.args.model == 'ForecastPFN':
+            pretrained = ForecastPFN()
+            pretrained.load_state_dict(torch.load('./checkpoints/forecastpfn_pytorch.pth'))
+            # pretrained.load_state_dict(torch.load('./synthetic-data/models/model.pt'))
+            # pretrained.load_state_dict(torch.load('./synthetic-data/models/model_f2.pt'))
+        elif self.args.model == 'ForecastPFN-PAttn':
+            pretrained = ForecastPFN_PAttn()
+            pretrained.load_state_dict(torch.load('./synthetic-data/models/model2.pt'))
+        elif self.args.model == 'ForecastPFN-TSMixer':
+            pretrained = ForecastPFN_TSMixer()
+            pretrained.load_state_dict(torch.load('./synthetic-data/models/model2.pt'))
+        elif self.args.model == 'ForecastPFN-Linear':
+            pretrained = ForecastPFN_Linear()
+            pretrained.load_state_dict(torch.load('./synthetic-data/models/model2.pt'))
         return pretrained
 
     def _get_data(self, flag):
@@ -176,14 +187,14 @@ class Exp_ForecastPFN(Exp_Basic):
                 preds.append(pred)
                 trues.append(true)
                 input = batch_x.detach().cpu().numpy()
-                if test_data.scale and self.args.inverse:
-                    shape = input.shape
-                    input = test_data.inverse_transform(input.reshape(shape[0] * shape[1], -1)).reshape(shape)
+                # if test_data.scale and self.args.inverse:
+                    # shape = input.shape
+                    # input = test_data.inverse_transform(input.reshape(shape[0] * shape[1], -1)).reshape(shape)
                 true = np.array(true)
                 pred = np.array(pred)
                 # print('input shape:', input.shape)
                 gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
-                pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
+                pd = np.concatenate((input[0, :, -1], pred[0, 0, :]), axis=0)
                 # print()
                 visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
 
