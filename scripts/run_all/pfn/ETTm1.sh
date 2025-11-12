@@ -1,7 +1,32 @@
+#!/bin/bash
+
+# Default values
+d_model=512
+n_heads=8
+e_layers=16
+d_ff=3072
+seq_len=512
 model=LinearPFN
 data_path="/home/lvu/playground/Time-Series-Library/dataset"
 
-for train_budget in 0.1 0.5 1.0
+# Parse arguments
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --d_model) d_model="$2"; shift ;;
+        --n_heads) n_heads="$2"; shift ;;
+        --e_layers) e_layers="$2"; shift ;;
+        --d_ff) d_ff="$2"; shift ;;
+        --model) model="$2"; shift ;;
+        --data_version) data_version="$2"; shift ;;
+        # --data_path) data_path="$2"; shift ;;
+        --seq_len) seq_len="$2"; shift ;;
+        *) echo "Unknown parameter passed: $1"; exit 1 ;;
+    esac
+    shift
+done
+
+# for train_budget in 0.1 0.5 1.0
+for train_budget in 0.25 0.75
 do
 
 for pred_len in 96
@@ -13,16 +38,17 @@ python run.py \
   --data ETTm1 \
   --root_path $data_path/ETT-small/ \
   --data_path ETTm1.csv \
-  --model_id ETTm1_96_96_$model \
+  --model_id ETTm1_$model \
   --model $model \
   --features S \
-  --seq_len 96 --label_len 36 \
+  --seq_len $seq_len --label_len 36 \
   --pred_len $pred_len \
-  --d_model 512 \
-  --n_heads 8 \
-  --e_layers 16 \
-  --d_ff 3072 \
-  --train_budget $train_budget
+  --d_model $d_model \
+  --n_heads $n_heads \
+  --e_layers $e_layers \
+  --d_ff $d_ff \
+  --train_budget $train_budget \
+  --data_version $data_version
 
 done;
 done

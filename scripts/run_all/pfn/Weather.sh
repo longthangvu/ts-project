@@ -35,10 +35,10 @@ do
 python run.py \
   --task_name meta_learning_pfn \
   --is_training 0 \
-  --data ETTh2 \
-  --root_path $data_path/ETT-small/ \
-  --data_path ETTh2.csv \
-  --model_id ETTh2_$model \
+  --data weather \
+  --root_path $data_path/weather/ \
+  --data_path weather.csv \
+  --model_id weather_$model \
   --model $model \
   --features S \
   --seq_len $seq_len --label_len 36 \
