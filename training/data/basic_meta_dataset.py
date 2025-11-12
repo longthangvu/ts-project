@@ -39,7 +39,7 @@ class SimpleMetaDataset:
             is_train=False,
             device=device,
             return_components=False,
-            scale_noise=False,
+            scale_noise=True,
             separate_noise=False  # Single values only
         )
     
@@ -89,14 +89,27 @@ class SimpleMetaDataset:
         )
         return ctx_indices, qry_indices
 
-    def compute_scaler(
-        self,
-        patch_X: np.ndarray,
-        ctx_indices: np.ndarray,
-    ) -> tuple[float, float]:
-        """Fit (mu, sigma) on context histories only."""
-        mu = float(patch_X[ctx_indices].mean())
-        sigma = float(patch_X[ctx_indices].std() + 1e-6)
+    # def compute_scaler(
+    #     self,
+    #     patch_X: np.ndarray,
+    #     ctx_indices: np.ndarray,
+    # ) -> tuple[float, float]:
+    #     """Fit (mu, sigma) on context histories only."""
+    #     mu = float(patch_X[ctx_indices].mean())
+    #     sigma = float(patch_X[ctx_indices].std() + 1e-6)
+    #     return mu, sigma
+    
+    def compute_scaler(self, patches_x, ctx_idx=None):
+        N = patches_x.shape[0]
+        if ctx_idx is None:
+            split = int(0.8 * N)
+            x_ctx = patches_x[:split]
+        else:
+            x_ctx = patches_x[ctx_idx]
+        mu = x_ctx.mean()
+        med = x_ctx.median()
+        mad = (x_ctx - med).abs().median()
+        sigma = (1.4826 * mad).clamp_min(0.10)
         return mu, sigma
     
     def create_meta_task(self):

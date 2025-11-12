@@ -127,7 +127,7 @@ class VariableMetaDataset(SimpleMetaDataset):
         # ctx_indices, qry_indices = self.sample_context_query_split(
         #     len(patches_x), C_actual, Q_actual
         # )
-        mu, sigma = self.compute_scaler(patches_x, ctx_idx)
+        mu, sigma = self.compute_scaler(patches_x)
         
         x_norm = torch.clamp((patches_x - mu) / sigma, -10.0, 10.0)
         z_norm = torch.clamp((patches_z - mu) / sigma, -10.0, 10.0)
