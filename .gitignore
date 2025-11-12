@@ -166,5 +166,8 @@ run_anylearn.py
 environment.txt
 /logs
 **/archives
-**/ckpts
+**/ckpts*
 **results**
+**/.gradio/
+training/**/series_bank
+training/tb_**/
