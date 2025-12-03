@@ -26,11 +26,14 @@ def generate_trend_component(
     """
     values = torch.ones_like(x)
     origin = x[:, 0].unsqueeze(-1).expand(-1, x.shape[-1])
-
     distance_to_origin = torch.sub(x, origin)
+    # span = (x[:, -1] - x[:, 0]).unsqueeze(-1).expand_as(x).clamp_min(1e-8)
+    # linear_trend = torch.zeros_like(x)
+    
     if trend_linear_scaler is not None:
         trend_linear_scaler = trend_linear_scaler.unsqueeze(-1).expand(-1, x.shape[-1])
         linear_trend = torch.mul(
+            # shift_axis(distance_to_origin, offset_linear) / span, trend_linear_scaler
             shift_axis(distance_to_origin, offset_linear), trend_linear_scaler
         )
         values = torch.add(values, linear_trend)
@@ -92,8 +95,9 @@ def get_freq_component(
         cos_coef.unsqueeze(-1)
         * torch.cos(2 * torch.pi * harmonics.unsqueeze(-1) * freq_pattern.unsqueeze(1))
     ).sum(1)
-
-    return torch.add(sin, cos)
+    comp = torch.add(sin, cos)
+    comp = comp / (2.0 * n_harmonics.item()) ** 0.5
+    return comp
 
 
 def binning_function(
@@ -104,6 +108,11 @@ def binning_function(
     out[mask] = (out[mask] % bins) + 1
     return out
 
+def _bounded_part(phi, amp, cap=0.95):
+    # phi: [B,T] raw periodic basis; amp: [B]
+    phi_b = torch.tanh(phi)                      # bound basis to [-1,1]
+    a = torch.tanh(amp) * cap                    # bound amplitude to [-cap,cap]
+    return 1.0 + a.unsqueeze(-1) * phi_b         # strictly > 0 for cap<1
 
 def generate_seasonal_component(
     annual_param: torch.Tensor,
@@ -131,23 +140,23 @@ def generate_seasonal_component(
     seasonal = torch.ones(x.shape[0], x.shape[1], 4).to(device)
 
     if annual_param is not None:
-        annual_component = 1 + annual_param.unsqueeze(-1) * get_freq_component(
-            binning_function(x, 12, 30.417, n_units), n_harmonics[0], 12, device
-        )
+        phi_ann = get_freq_component(binning_function(x, 12, 30.417, n_units), 
+                                     n_harmonics[0], 12, device)
+        annual_component = _bounded_part(phi_ann, annual_param.to(device), 0.95)
         seasonal[:, :, 1] = annual_component
         seasonal[:, :, 0] = torch.mul(seasonal[:, :, 0], annual_component)
 
     if monthly_param is not None:
-        monthly_component = 1 + monthly_param.unsqueeze(-1) * get_freq_component(
-            binning_function(x, 30.417, 1, n_units), n_harmonics[1], 30.417, device
-        )
+        phi_mth = get_freq_component(binning_function(x, 30.417, 1, n_units), 
+                                     n_harmonics[1], 30.417, device)
+        monthly_component = _bounded_part(phi_mth, monthly_param.to(device), 0.95)
         seasonal[:, :, 2] = monthly_component
         seasonal[:, :, 0] = torch.mul(seasonal[:, :, 0], monthly_component)
 
     if weekly_param is not None:
-        weekly_component = 1 + weekly_param.unsqueeze(-1) * get_freq_component(
-            binning_function(x, 7, 1, n_units), n_harmonics[2], 7, device
-        )
+        phi_wkl = get_freq_component(binning_function(x, 7, 1, n_units), 
+                                     n_harmonics[2], 7, device)
+        weekly_component = _bounded_part(phi_wkl, weekly_param.to(device), 0.95)
         seasonal[:, :, 3] = weekly_component
         seasonal[:, :, 0] = torch.mul(seasonal[:, :, 0], weekly_component)
 

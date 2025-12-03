@@ -2,15 +2,11 @@ import os
 import warnings
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
 import csv
-import heapq, math, random
+import heapq, random
 
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
-from training.models.SimpleLinearPFN import SimpleLinearPFN, SimpleLinearPFN_GNLL
-from training.models.FITSPFN import FitsPFN
-from training.models.LinearPFN import LinearPFN
 from utils.metrics import metric
 from utils.tools import visual
 
@@ -51,7 +47,6 @@ def build_context_sampled(train_loader,
             bx = bx.squeeze(-1)  # [B, L]
             z  = z.squeeze(-1)   # [B, H]
 
-        # ensure CPU storage (dramatically reduces GPU mem pressure while sampling)
         bx = bx.detach().to("cpu")
         z  = z.detach().to("cpu")
 
@@ -84,7 +79,6 @@ def build_context_sampled(train_loader,
 
             gidx += 1
 
-    # finalize
     if not heap:
         return torch.empty(0, dtype=torch.float32), torch.empty(0, dtype=torch.float32)
 
@@ -92,59 +86,44 @@ def build_context_sampled(train_loader,
     xs = torch.stack([it.x for it in heap], dim=0)  # [N_ctx, L]
     zs = torch.stack([it.z for it in heap], dim=0)  # [N_ctx, H]
 
-    # optional: move to target device here if your model expects it on GPU
     if device != "cpu":
         xs = xs.to(device, non_blocking=True)
         zs = zs.to(device, non_blocking=True)
 
     return xs, zs
 
+def build_model(model_name, L, H, d_model, L_blk, n_heads, d_ff, version=0):
+    if model_name == 'SimplePFN':
+        from training.models.SimpleLinearPFN import SimpleLinearPFN
+        mdl = SimpleLinearPFN
+    elif model_name == 'FITSPFN':
+        from training.models.FITSPFN import FitsPFN
+        mdl = FitsPFN
+    elif model_name == 'LinearPFN_old':
+        from training.models.LinearPFN import LinearPFN_old
+        mdl = LinearPFN_old
+    elif model_name == 'LinearPFN':
+        from training.models.LinearPFN import LinearPFN
+        mdl = LinearPFN
+    model = mdl(L=L, H=H, d=d_model, L_blk=L_blk, n_heads=n_heads, d_ff=d_ff)
+
+    print('Loading model from checkpoint')
+    model_path = f'training/ckpts/{model_name}/v{version}/L{L}_H{H}_d{d_model}_Lblk{L_blk}_n{n_heads}_dff{d_ff}_do0.1'
+    
+    ckpt = torch.load(os.path.join(model_path, 'best_model.pt'), weights_only=False)
+    model.load_state_dict(ckpt['model_state_dict'])
+    return model
+
 class Exp_MetaLearningPFN(Exp_Basic):
     def __init__(self, args):
         super(Exp_MetaLearningPFN, self).__init__(args)
 
     def _build_model(self):
-        if self.args.model == 'SimplePFN':
-            model = SimpleLinearPFN(
-                L=self.args.seq_len,
-                H=self.args.pred_len,
-                d=self.args.d_model,
-                L_blk=self.args.e_layers,
-                n_heads=self.args.n_heads,
-                d_ff=self.args.d_ff,
-            ).float()
+        version = self.args.data_version
+        L, H = self.args.seq_len, self.args.pred_len
+        d_model, L_blk, n_heads, d_ff = self.args.d_model, self.args.e_layers, self.args.n_heads, self.args.d_ff
+        return build_model(self.args.model, L, H, d_model, L_blk, n_heads, d_ff, version)
 
-            print('Loading model from checkpoint')
-            ckpt = torch.load(os.path.join(f'training/ckpts/{self.args.seq_len}_{self.args.pred_len}', 'best_model.pt'), weights_only=False)
-            model.load_state_dict(ckpt['model_state_dict'])
-        elif self.args.model == 'FITSPFN':
-            model = FitsPFN(
-                L=self.args.seq_len,
-                H=self.args.pred_len,
-                d=self.args.d_model,
-                L_blk=self.args.e_layers,
-                n_heads=self.args.n_heads,
-                d_ff=self.args.d_ff,
-            ).float()
-
-            print('Loading model from checkpoint')
-            ckpt = torch.load(os.path.join(f'training/ckpts/FITS_{self.args.seq_len}_{self.args.pred_len}', 'best_model.pt'), weights_only=False)
-            model.load_state_dict(ckpt['model_state_dict'])
-        elif self.args.model == 'LinearPFN':
-            model = LinearPFN(
-                L=self.args.seq_len,
-                H=self.args.pred_len,
-                d=self.args.d_model,
-                L_blk=self.args.e_layers,
-                n_heads=self.args.n_heads,
-                d_ff=self.args.d_ff,
-            ).float()
-
-            print('Loading model from checkpoint')
-            ckpt = torch.load(os.path.join(f'training/ckpts/t_{self.args.seq_len}_{self.args.pred_len}', 'best_model.pt'), weights_only=False)
-            model.load_state_dict(ckpt['model_state_dict'])
-        
-        return model
 
     def _get_data(self, flag):
         data_set, data_loader = data_provider(self.args, flag)
@@ -186,17 +165,15 @@ class Exp_MetaLearningPFN(Exp_Basic):
         PFN eval with standard loaders:
           - context = all train windows
           - queries = each test batch (batched)
-          - inverse-transform using dataset scaler for metrics on original scale
         """
         print("Loading data...")
-        train_data, train_loader = self._get_data(flag='train')
+        _, train_loader = self._get_data(flag='train')
         test_data, test_loader   = self._get_data(flag='test')
 
         print("Collecting context from train...")
         ctx_x, ctx_z = self._build_context(train_loader)  # [C, L], [C, H]
         print(f"ctx: x{tuple(ctx_x.shape)}, z{tuple(ctx_z.shape)}")
 
-        # to device once
         ctx_x = ctx_x.to(self.device).float()
         ctx_z = ctx_z.to(self.device).float()
 
@@ -207,7 +184,7 @@ class Exp_MetaLearningPFN(Exp_Basic):
 
         preds, trues = [], []
         self.model.eval()
-        out_dir = './results_pfn/' + setting + '/' + f'{self.args.train_budget}' + '/'
+        out_dir = './results/' + setting + f'/{self.args.data}/{self.args.train_budget}/'
         os.makedirs(out_dir, exist_ok=True)
 
         for i, (bx, by, _, _) in enumerate(test_loader):
@@ -247,7 +224,6 @@ class Exp_MetaLearningPFN(Exp_Basic):
             preds.append(mu)
             trues.append(y)
 
-
             # inverse the history input 
             inp = bx.detach().cpu().numpy()
             if inp.shape[-1] > 1:
@@ -267,24 +243,29 @@ class Exp_MetaLearningPFN(Exp_Basic):
         mae, mse, rmse, mape, mspe = metric(preds, trues)
         print(f'mse:{mse}, mae:{mae}, rmse:{rmse}, mape:{mape}, mspe:{mspe}')
         
-        csv_path = os.path.join('./results_pfn/', 'results.csv')
-        header = ['model','dataset', 'pred_len', 'train_budget', 'mae', 'mse', 'rmse', 'mape', 'mspe']
-        row = [
-            self.args.model,
-            self.args.data,
-            self.args.pred_len,
-            self.args.train_budget,
-            mae, mse, rmse, mape, mspe
-        ]
+        csv_path = 'results.csv'
+        header = ['dataset', 'train_budget', 'seq_len', 'pred_len',
+                  'd_model', 'e_layers', 'n_heads', 'd_ff',
+                  'mae', 'mse', 'rmse', 'mape', 'mspe']
+        row = [self.args.data, self.args.train_budget, self.args.seq_len, self.args.pred_len,
+               self.args.d_model, self.args.e_layers, self.args.n_heads, self.args.d_ff,
+               mae, mse, rmse, mape, mspe]
 
         write_header = not os.path.exists(csv_path)
         with open(csv_path, 'a', newline='') as f:
             writer = csv.writer(f)
             if write_header:
+                writer.writerow(['model'] + header)
+            writer.writerow([self.args.model] + row)
+
+        csv_p = './results/' + setting + '/results.csv'
+        write_header = not os.path.exists(csv_p)
+        with open(csv_p, 'a', newline='') as f:
+            writer = csv.writer(f)
+            if write_header:
                 writer.writerow(header)
             writer.writerow(row)
 
-        os.makedirs(out_dir, exist_ok=True)
         np.save(os.path.join(out_dir, 'metrics.npy'), np.array([mae, mse, rmse, mape, mspe]))
         np.save(os.path.join(out_dir, 'pred.npy'), preds)
         np.save(os.path.join(out_dir, 'true.npy'), trues)

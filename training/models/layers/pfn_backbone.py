@@ -1,5 +1,5 @@
 import torch.nn as nn
-from pfn_encoder import PFNEncoderLayerRecency
+from .pfn_encoder import PFNEncoderLayerRecency
 
 class PFNBackbone(nn.Module):
     def __init__(self, d, n_heads, d_ff, dropout, recency, L_blk):

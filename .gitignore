@@ -171,4 +171,4 @@ environment.txt
 **/.gradio/
 training/**/series_bank
 training/tb_**/
-training/jobs.txt
+training/jobs**.txt

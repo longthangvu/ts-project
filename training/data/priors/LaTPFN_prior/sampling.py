@@ -80,14 +80,14 @@ def triple_sampling(
 def noise_scale_sampling(num_samples: int, device: str = "cpu"):
     rand = np.random.rand()
     # very low noise
-    if rand <= 0.6:
-        noise = Uniform(0, 0.1).sample([num_samples])
+    if rand <= 0.4:
+        noise = Uniform(0, 0.2).sample([num_samples])
     # moderate noise
-    elif rand <= 0.9:
-        noise = Uniform(0.2, 0.4).sample([num_samples])
+    elif rand <= 0.8:
+        noise = Uniform(0.3, 0.7).sample([num_samples])
     # high noise
     else:
-        noise = Uniform(0.6, 0.8).sample([num_samples])
+        noise = Uniform(0.8, 1.2).sample([num_samples])
 
     return noise.to(device)
 

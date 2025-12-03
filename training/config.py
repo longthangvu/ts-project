@@ -1,8 +1,8 @@
 from util.config_util import ShapeConfig, dotdict
 
-def get_C_Q_ranges():
-    C_range = (4, 64)
-    Q_range = (1, 8)
+def get_C_Q_ranges(args=None):
+    C_range = (args.c_min, args.c_max)
+    Q_range = (1, 32)
     return C_range, Q_range
 
 def get_config_shape():
@@ -46,12 +46,12 @@ def get_hyperprior_params(seasonality_base = 2.0):
     
 def get_train_config():
     return {
-        'total_tasks': 500_000,          # 500K tasks
-        'tasks_per_epoch': 5_000,        # 5K tasks per epoch  
-        'validate_every': 10,            # Validate every 10 epochs
-        'save_every': 20,                # Save every 20 epochs
-        'log_every': 500,                # Log every 500 tasks
-        'n_val_tasks': 100,              # Validation tasks
-        'early_stopping_patience': 20,   # Patience for 500K training
-        'warmup_tasks': 5_000,           # LR warmup period
+        'total_tasks': 500_000,        # num tasks
+        'tasks_per_epoch': 2_500,        # tasks per epoch  
+        'validate_every': 4,
+        'save_every': 40,
+        'log_every': 250,
+        'n_val_tasks': 500,              # num val tasks
+        'early_stopping_patience': 10,
+        'warmup_tasks': 50_000,           # LR warmup period
     }

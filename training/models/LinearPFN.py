@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
 
-from layers.pfn_encoder import RecencyBias, PFNEncoderLayerRecency
-from layers.pfn_backbone import PFNBackbone
-from layers.input_encoder import InputEncoder
-from layers.mask_builder import MaskBuilder
+from .layers.pfn_encoder import RecencyBias, PFNEncoderLayerRecency
+from .layers.pfn_backbone import PFNBackbone
+from .layers.input_encoder import InputEncoder
+from .layers.mask_builder import MaskBuilder
 
 # ---- SimpleLinearPFN with time-indexed recency only ----
 class LinearPFN_old(nn.Module):

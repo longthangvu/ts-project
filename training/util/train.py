@@ -5,8 +5,11 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+def _floor_to_step(x, step): return int(step * np.floor(x / step))
+def _ceil_to_step(x, step):  return int(step * np.ceil(x / step))
 
-def validate_model(model, dataset, device, n_val_tasks=100, use_time=False):
+def validate_model(model, dataset, device, n_val_tasks=100, use_time=False, 
+                   C_range: tuple[int, int] | None = None, C_step: int = 32):
     criterion = nn.MSELoss(reduction='mean')
     model.eval()
     losses, corrs, C_sizes, Q_sizes = [], [], [], []
@@ -33,7 +36,37 @@ def validate_model(model, dataset, device, n_val_tasks=100, use_time=False):
             p = pred.flatten().float().cpu()
             q = qry_z.flatten().float().cpu()
             if p.numel() > 1 and torch.var(p) > 0 and torch.var(q) > 0:
-                corrs.append(torch.corrcoef(torch.stack([p, q]))[0, 1].item())
+                r = torch.corrcoef(torch.stack([p, q]))[0, 1]
+                corr = r.item() if torch.isfinite(r) else 0.0
+            else:
+                corr = 0.0
+            corrs.append(corr)
+
+    corr_buckets = {}
+    if C_range is None:
+        lo_obs, hi_obs = min(C_sizes), max(C_sizes)
+    else:
+        lo_obs, hi_obs = C_range
+
+    lo = max(C_step, _floor_to_step(lo_obs, C_step))
+    hi = _ceil_to_step(hi_obs, C_step)
+    edges = np.arange(lo, hi + C_step, C_step, dtype=float)
+
+    C_arr = np.asarray(C_sizes)
+    corr_arr = np.asarray(corrs, dtype=float)
+
+    idx = np.searchsorted(edges, C_arr, side='right') - 1
+    valid = (idx >= 0) & (idx < len(edges) - 1)
+
+    bsum = np.bincount(idx[valid], weights=corr_arr[valid], minlength=len(edges)-1)
+    bcnt = np.bincount(idx[valid], minlength=len(edges)-1)
+
+    for i in range(len(edges) - 1):
+        if bcnt[i] > 0:
+            lo_i = int(edges[i])
+            hi_edge = edges[i + 1]
+            hi_i = int(hi_edge) if np.isfinite(hi_edge) else 'inf'
+            corr_buckets[f'val/corr_C_[{lo_i},{hi_i})'] = float(bsum[i] / bcnt[i])
 
     model.train()
     return {
@@ -45,6 +78,7 @@ def validate_model(model, dataset, device, n_val_tasks=100, use_time=False):
         'avg_Q': float(np.mean(Q_sizes)) if Q_sizes else 0.0,
         'C_range': f"{min(C_sizes)}-{max(C_sizes)}" if C_sizes else "0-0",
         'Q_range': f"{min(Q_sizes)}-{max(Q_sizes)}" if Q_sizes else "0-0",
+        'corr_buckets': corr_buckets
     }
 
 

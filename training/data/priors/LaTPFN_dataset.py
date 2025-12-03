@@ -120,7 +120,7 @@ class LaTPFNDataset(BasePrior):
             device=self.device,
             component_params=component_params,
             return_components=self.return_components,
-            scale_noise=False,
+            scale_noise=self.scale_noise,
         )
 
         component_params = self.normalize_components(component_params)
@@ -324,8 +324,10 @@ def make_multiple_series(
         seasonal_components[:, :, 2],
         seasonal_components[:, :, 3],
     )
+    # total_seasonality = total_seasonality.clamp(0.1, 10.0)
 
-    noisless_values = trend_comp_total * total_seasonality
+    # noisless_values = trend_comp_total * total_seasonality
+    noisless_values= component_params.amplitude[:, None] * (trend_comp_total * total_seasonality)
 
     noise_mean = torch.ones_like(component_params.noise_k)
 
@@ -342,6 +344,10 @@ def make_multiple_series(
 
     if scale_noise:
         noise = noise * trend_comp_total
+        # lvl = (trend_comp_total / trend_comp_total.mean(dim=1, keepdim=True)).sqrt()
+        # noise = 1 + (lvl - 1) * component_params.noise_scale.unsqueeze(-1) * (
+        #     weibull_noise_term - noise_mean.unsqueeze(-1)
+        # )
 
     if return_components:
         return (

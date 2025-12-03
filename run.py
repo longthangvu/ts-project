@@ -37,6 +37,7 @@ if __name__ == '__main__':
                         help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
     parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
     parser.add_argument('--train_budget', type=float, default=1.0, help='length of training sequence')
+    parser.add_argument('--data_version', type=int, default=0)
     parser.add_argument('--train_stride', type=int, default=16)
     parser.add_argument('--use_time', type=bool, default=True)
     
@@ -145,25 +146,17 @@ if __name__ == '__main__':
         for ii in range(args.itr):
             # setting record of experiments
             exp = Exp(args)  # set experiments
-            setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_{}'.format(
+            setting = '{}_{}_{}_{}_sl{}_pl{}_dm{}_nh{}_el{}_df{}_{}_{}'.format(
                 args.task_name,
                 args.model_id,
                 args.model,
                 args.data,
-                args.features,
                 args.seq_len,
-                args.label_len,
                 args.pred_len,
                 args.d_model,
                 args.n_heads,
                 args.e_layers,
-                args.d_layers,
                 args.d_ff,
-                args.expand,
-                args.d_conv,
-                args.factor,
-                args.embed,
-                args.distil,
                 args.des, ii)
 
             print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
@@ -178,26 +171,14 @@ if __name__ == '__main__':
     else:
         exp = Exp(args)  # set experiments
         ii = 0
-        setting = '{}_{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_expand{}_dc{}_fc{}_eb{}_dt{}_{}_{}'.format(
-            args.task_name,
-            args.model_id,
-            args.model,
-            args.data,
-            args.features,
+        setting = '{}/v{}/sl{}_pl{}_dm{}_nh{}_el{}_df{}'.format(
+            args.model,args.data_version,
             args.seq_len,
-            args.label_len,
             args.pred_len,
             args.d_model,
             args.n_heads,
             args.e_layers,
-            args.d_layers,
-            args.d_ff,
-            args.expand,
-            args.d_conv,
-            args.factor,
-            args.embed,
-            args.distil,
-            args.des, ii)
+            args.d_ff)
 
         print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
         exp.test(setting, test=1)
