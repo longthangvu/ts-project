@@ -25,8 +25,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-# for train_budget in 0.1 0.5 1.0
-for train_budget in 0.25 0.75
+for train_budget in 0.05 0.075 0.1 0.25 0.5 0.75 1.0
 do
 
 for pred_len in 96
