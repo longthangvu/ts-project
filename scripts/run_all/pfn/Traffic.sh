@@ -8,6 +8,8 @@ d_ff=3072
 seq_len=512
 model=LinearPFN
 data_path="/home/lvu/playground/Time-Series-Library/dataset"
+c_min=32
+c_max=1536
 
 # Parse arguments
 while [[ "$#" -gt 0 ]]; do
@@ -19,6 +21,8 @@ while [[ "$#" -gt 0 ]]; do
         --seq_len) seq_len="$2"; shift ;;
         --model) model="$2"; shift ;;
         --data_version) data_version="$2"; shift ;;
+        --c_min) c_min="$2"; shift ;;
+        --c_max) c_max="$2"; shift ;;
         # --data_path) data_path="$2"; shift ;;
         *) echo "Unknown parameter passed: $1"; exit 1 ;;
     esac
@@ -47,7 +51,9 @@ python run.py \
   --e_layers $e_layers \
   --d_ff $d_ff \
   --train_budget $train_budget \
-  --data_version $data_version
+  --data_version $data_version \
+  --c_min $c_min \
+  --c_max $c_max 
 
 done;
 done

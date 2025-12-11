@@ -55,8 +55,9 @@ awk -F',' '
   d_model=$(echo "$d_model" | xargs); Lblk=$(echo "$Lblk" | xargs)
   n=$(echo "$n" | xargs); dff=$(echo "$dff" | xargs)
   do=$(echo "$do" | xargs); data_version=$(echo "$data_version" | xargs)
+  Cmin=$(echo "$Cmin" | xargs); Cmax=$(echo "$Cmax" | xargs)
 
-  echo ">>> Running: MODEL=$MODEL L=$L H=$H d=$d_model Lblk=$Lblk n=$n dff=$dff do=$do data_version=$data_version (CSV line $ROW_NR)"
+  echo ">>> Running: MODEL=$MODEL L=$L H=$H d=$d_model Lblk=$Lblk n=$n dff=$dff do=$do Cmin=$Cmin Cmax=$Cmax data_version=$data_version (CSV line $ROW_NR)"
 
   # Log directory consistent with your previous naming
   log_dir=/${MODEL}/v${data_version}/${L}_${H}_d${d_model}_L${Lblk}_n${n}_dff${dff}_do${do}
@@ -73,6 +74,8 @@ awk -F',' '
       --e_layers "$Lblk" \
       --d_ff "$dff" \
       --data_version "$data_version" \
+      --c_min "$Cmin" \
+      --c_max "$Cmax" \
       > "./logs${log_dir}/${ds}.log"
   done
 
@@ -84,7 +87,9 @@ awk -F',' '
     --d_model "$d_model" \
     --n_heads "$n" \
     --e_layers "$Lblk" \
-    --d_ff "$dff"
+    --d_ff "$dff" \
+    --c_min "$Cmin" \
+    --c_max "$Cmax" 
 
   # Mark this row as tested=1 only after all above succeed
   mark_tested "$CSV_FILE" "$ROW_NR"

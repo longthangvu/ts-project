@@ -38,6 +38,8 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
     parser.add_argument('--train_budget', type=float, default=1.0, help='length of training sequence')
     parser.add_argument('--data_version', type=int, default=0)
+    parser.add_argument('--c_min', type=int, default=32)
+    parser.add_argument('--c_max', type=int, default=1536)
     parser.add_argument('--train_stride', type=int, default=16)
     parser.add_argument('--use_time', type=bool, default=True)
     

@@ -92,7 +92,7 @@ def build_context_sampled(train_loader,
 
     return xs, zs
 
-def build_model(model_name, L, H, d_model, L_blk, n_heads, d_ff, version=0):
+def build_model(model_name, L, H, d_model, L_blk, n_heads, d_ff, c_min=32, c_max=1536, version=0):
     if model_name == 'SimplePFN':
         from training.models.SimpleLinearPFN import SimpleLinearPFN
         mdl = SimpleLinearPFN
@@ -108,7 +108,7 @@ def build_model(model_name, L, H, d_model, L_blk, n_heads, d_ff, version=0):
     model = mdl(L=L, H=H, d=d_model, L_blk=L_blk, n_heads=n_heads, d_ff=d_ff)
 
     print('Loading model from checkpoint')
-    model_path = f'training/ckpts/{model_name}/v{version}/L{L}_H{H}_d{d_model}_Lblk{L_blk}_n{n_heads}_dff{d_ff}_do0.1'
+    model_path = f'training/ckpts/{model_name}/v{version}/L{L}_H{H}_d{d_model}_Lblk{L_blk}_n{n_heads}_dff{d_ff}_do0.1_C{c_min}-{c_max}_Q1-32'
     
     ckpt = torch.load(os.path.join(model_path, 'best_model.pt'), weights_only=False)
     model.load_state_dict(ckpt['model_state_dict'])
@@ -122,7 +122,8 @@ class Exp_MetaLearningPFN(Exp_Basic):
         version = self.args.data_version
         L, H = self.args.seq_len, self.args.pred_len
         d_model, L_blk, n_heads, d_ff = self.args.d_model, self.args.e_layers, self.args.n_heads, self.args.d_ff
-        return build_model(self.args.model, L, H, d_model, L_blk, n_heads, d_ff, version)
+        c_min, c_max = self.args.c_min, self.args.c_max
+        return build_model(self.args.model, L, H, d_model, L_blk, n_heads, d_ff, c_min, c_max, version)
 
 
     def _get_data(self, flag):
@@ -184,7 +185,7 @@ class Exp_MetaLearningPFN(Exp_Basic):
 
         preds, trues = [], []
         self.model.eval()
-        out_dir = './results/' + setting + f'/{self.args.data}/{self.args.train_budget}/'
+        out_dir = './results/' + setting + f'/C{self.args.c_min}-{self.args.c_max}_Q1-32/{self.args.data}/{self.args.train_budget}/'
         os.makedirs(out_dir, exist_ok=True)
 
         for i, (bx, by, _, _) in enumerate(test_loader):
@@ -258,7 +259,7 @@ class Exp_MetaLearningPFN(Exp_Basic):
                 writer.writerow(['model'] + header)
             writer.writerow([self.args.model] + row)
 
-        csv_p = './results/' + setting + '/results.csv'
+        csv_p = './results/' + setting + f'/C{self.args.c_min}-{self.args.c_max}_Q1-32' + '/results.csv'
         write_header = not os.path.exists(csv_p)
         with open(csv_p, 'a', newline='') as f:
             writer = csv.writer(f)
